@@ -64,6 +64,11 @@ def replace(conn, project_id, clips, expected_revision):
              for i, c in enumerate(clips)],
         )
         conn.execute('UPDATE projects SET revision=revision+1 WHERE id=?', (project_id,))
+        # Whole-timeline replacement starts a fresh collaborative lineage: old
+        # base revisions cannot seed new edits, but old receipts and frozen
+        # exports keep their content-addressed history.
+        from . import collab_store
+        collab_store.begin_lineage(conn, project_id, revision + 1)
     return snapshot(conn, project_id)
 
 

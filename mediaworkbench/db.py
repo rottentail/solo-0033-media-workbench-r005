@@ -6,7 +6,9 @@ SCHEMA = '''
 CREATE TABLE IF NOT EXISTS edit_heads (project_id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, clip_ids TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS edit_nodes (key BLOB PRIMARY KEY, payload BLOB NOT NULL) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS edit_versions (project_id INTEGER NOT NULL REFERENCES projects(id), revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(project_id,revision));
-CREATE TABLE IF NOT EXISTS edit_receipts (project_id INTEGER NOT NULL REFERENCES projects(id), actor TEXT NOT NULL, request_id TEXT NOT NULL, body_sha256 TEXT NOT NULL, response TEXT NOT NULL, inverse TEXT NOT NULL, undone_by TEXT, PRIMARY KEY(project_id,actor,request_id));
+CREATE TABLE IF NOT EXISTS edit_generations (project_id INTEGER NOT NULL REFERENCES projects(id), generation INTEGER NOT NULL, base_revision INTEGER NOT NULL, PRIMARY KEY(project_id,generation));
+CREATE TABLE IF NOT EXISTS edit_lineages (project_id INTEGER NOT NULL REFERENCES projects(id), revision INTEGER NOT NULL, generation INTEGER NOT NULL, PRIMARY KEY(project_id,revision));
+CREATE TABLE IF NOT EXISTS edit_receipts (project_id INTEGER NOT NULL REFERENCES projects(id), actor TEXT NOT NULL, request_id TEXT NOT NULL, body_sha256 TEXT NOT NULL, response TEXT NOT NULL, inverse TEXT NOT NULL, undone_by TEXT, base_revision INTEGER, result_revision INTEGER, generation INTEGER, PRIMARY KEY(project_id,actor,request_id));
 CREATE TABLE IF NOT EXISTS assets (id INTEGER PRIMARY KEY, path TEXT NOT NULL, fingerprint TEXT NOT NULL, metadata TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS clips (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), asset_id INTEGER NOT NULL REFERENCES assets(id), start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, position INTEGER NOT NULL, gain REAL NOT NULL DEFAULT 1);
@@ -67,6 +69,12 @@ def connect(path):
     conn.execute('PRAGMA foreign_keys=ON')
     conn.execute('PRAGMA journal_mode=WAL')
     conn.executescript(SCHEMA)
+    # Additive migration for databases created before collaborative lineage
+    # generations; old receipts simply have NULL reference columns.
+    columns = {row['name'] for row in conn.execute('PRAGMA table_info(edit_receipts)')}
+    for column in ('base_revision', 'result_revision', 'generation'):
+        if column not in columns:
+            conn.execute(f'ALTER TABLE edit_receipts ADD COLUMN {column} INTEGER')
     return conn
 
 
